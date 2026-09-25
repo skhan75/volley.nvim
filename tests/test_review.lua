@@ -164,6 +164,22 @@ T["annotate()"]["shows the comment in the file"] = function()
     eq(text:find("why is this hardcoded", 1, true) ~= nil, true)
 end
 
+T["annotate()"]["forgets a selection once you have moved away from it"] = function()
+    setup()
+    edit_file()
+    child.cmd("edit " .. dir .. "/src/billing.py")
+    child.api.nvim_win_set_cursor(0, { 7, 0 })
+    child.type_keys("Vj", "<Esc>")
+    child.lua("v().annotate()")
+    -- a second comment, somewhere else entirely
+    child.api.nvim_win_set_cursor(0, { 2, 0 })
+    child.lua("v().annotate()")
+    local list = child.lua_get("require('volley.annotations').list()")
+    eq(#list, 2)
+    eq({ list[1].lnum, list[1].end_lnum }, { 2, 2 })
+    eq({ list[2].lnum, list[2].end_lnum }, { 7, 8 })
+end
+
 T["annotate()"]["writes nothing when you cancel the prompt"] = function()
     setup()
     edit_file()

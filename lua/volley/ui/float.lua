@@ -16,9 +16,28 @@ end
 local function width_of(items)
     local w = 30
     for _, item in ipairs(items) do
-        w = math.max(w, vim.fn.strdisplaywidth(item.text))
+        local own = vim.fn.strdisplaywidth(item.left or item.text)
+        if item.right then
+            own = own + vim.fn.strdisplaywidth(item.right) + 2
+        end
+        w = math.max(w, own)
     end
     return w
+end
+
+---One row. An item with a right half keeps it against the right edge, and a
+---path too long for the window loses its front, not its name.
+local function row_text(item, width)
+    if not item.right then
+        return item.text
+    end
+    local left, right = item.left or item.text, item.right
+    local room = width - vim.fn.strdisplaywidth(right) - 1
+    while vim.fn.strdisplaywidth(left) > room and #left > 1 do
+        left = "…" .. left:sub(-(room - 1))
+    end
+    local pad = width - vim.fn.strdisplaywidth(left) - vim.fn.strdisplaywidth(right)
+    return left .. string.rep(" ", math.max(pad, 1)) .. right
 end
 
 ---Lines to show for an item: what the caller gave us, or the file itself.
@@ -60,9 +79,10 @@ function M.pick(items, opts, on_pick)
     local want_preview = opts.preview ~= false
     local columns, lines_total = vim.o.columns, vim.o.lines
 
-    local list_w = math.min(width_of(items) + 2, math.max(30, math.floor(columns * 0.5)))
-    local prev_w = want_preview and math.max(30, math.min(80, columns - list_w - 8)) or 0
-    local total_w = list_w + (want_preview and prev_w + 3 or 0)
+    local total_w = math.max(30, math.min(columns - 8, want_preview and 120 or 60))
+    local list_w = math.min(width_of(items), want_preview and math.floor(total_w * 0.5) or total_w)
+    local prev_w = want_preview and (total_w - list_w - 2) or 0
+    total_w = list_w + (want_preview and prev_w + 2 or 0)
     local height = math.max(1, math.min(#items, math.floor(lines_total * 0.6)))
     local row = math.max(0, math.floor((lines_total - height) / 2) - 2)
     local col = math.max(0, math.floor((columns - total_w) / 2))
@@ -74,10 +94,11 @@ function M.pick(items, opts, on_pick)
         -1,
         false,
         vim.tbl_map(function(i)
-            return i.text
+            return row_text(i, list_w)
         end, items)
     )
     vim.bo[list_buf].modifiable = false
+    pcall(vim.api.nvim_buf_set_name, list_buf, "volley")
 
     local list_win = vim.api.nvim_open_win(list_buf, true, {
         relative = "editor",
@@ -93,6 +114,7 @@ function M.pick(items, opts, on_pick)
         footer_pos = "right",
     })
     vim.wo[list_win].cursorline = true
+    vim.wo[list_win].wrap = false
     vim.wo[list_win].winhighlight =
         "Normal:VolleyFloat,FloatBorder:VolleyBorder,CursorLine:VolleySelected"
 
@@ -104,7 +126,7 @@ function M.pick(items, opts, on_pick)
             width = prev_w,
             height = height,
             row = row,
-            col = col + list_w + 3,
+            col = col + list_w + 2,
             style = "minimal",
             border = "rounded",
             focusable = false,

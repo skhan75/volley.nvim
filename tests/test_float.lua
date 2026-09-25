@@ -60,6 +60,24 @@ T["shows the list and a preview beside it"] = function()
     eq(preview:find("return 1", 1, true) ~= nil, true)
 end
 
+T["pins the counts to the right edge and never wraps"] = function()
+    child.lua([[
+        local wide = string.rep("src/very/deep/", 8) .. "billing.py"
+        require("volley.ui.float").pick(
+            { { left = wide, right = "+14 ~2 -0", text = wide .. " +14 ~2 -0", file = "/p/a.py" } },
+            { prompt = "volley", preview = false },
+            function() end
+        )
+    ]])
+    local win = floats()[1]
+    local width = child.lua_get("vim.api.nvim_win_get_width(" .. win .. ")")
+    local line = lines_of(win)[1]
+    eq(vim.fn.strdisplaywidth(line), width)
+    eq(line:sub(-9), "+14 ~2 -0")
+    eq(line:find("billing.py", 1, true) ~= nil, true) -- the useful end of the path survives
+    eq(child.lua_get("vim.wo[" .. win .. "].wrap"), false)
+end
+
 T["puts the title on the window"] = function()
     open()
     local title = child.lua_get([[

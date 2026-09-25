@@ -18,6 +18,10 @@ local function opts()
     return config.options
 end
 
+local function plural(n, word)
+    return ("%d %s%s"):format(n, word, n == 1 and "" or "s")
+end
+
 local function notify(msg, level)
     vim.notify("volley: " .. msg, level or vim.log.levels.INFO, { title = "volley" })
 end
@@ -57,8 +61,8 @@ function M.snapshot()
     local _, cwd = project()
     local info = snapshot.take(cwd, opts().snapshot)
     notify(
-        ("snapshot taken, %d files%s"):format(
-            info.files,
+        ("snapshot taken, %s%s"):format(
+            plural(info.files, "file"),
             info.truncated and " (hit the file limit)" or ""
         )
     )
@@ -94,8 +98,13 @@ end
 local function file_item(f)
     local c = f.counts
     local counts = ("+%d ~%d -%d"):format(c.added, c.changed, c.removed)
+    if f.status ~= "modified" then
+        counts = counts .. "  " .. f.status
+    end
     return {
-        text = ("%-44s %s  %s"):format(f.path, counts, f.status == "modified" and "" or f.status),
+        text = ("%-44s %s"):format(f.path, counts),
+        left = f.path,
+        right = counts,
         file = f.abs,
         preview = hunk_preview(f),
         value = f,
@@ -121,7 +130,8 @@ function M.open()
         )
     end
     local items = vim.tbl_map(file_item, cs.files)
-    picker.pick(items, { prompt = ("volley  %d files changed"):format(#cs.files) }, function(item)
+    local title = ("volley  %s changed"):format(plural(#cs.files, "file"))
+    picker.pick(items, { prompt = title }, function(item)
         vim.cmd.edit(vim.fn.fnameescape(item.file))
         pcall(vim.api.nvim_win_set_cursor, 0, { first_hunk_line(item.value), 0 })
         render.draw(vim.api.nvim_get_current_buf())
@@ -136,13 +146,17 @@ local function selection()
         l1, l2 = vim.fn.line("v"), vim.fn.line(".")
         vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
     else
-        -- After leaving visual mode the marks still hold the last selection.
+        -- After leaving visual mode the marks still hold the last selection,
+        -- which is what `:Volley annotate` sees. It counts only while the
+        -- cursor is still inside it, and only once.
+        local cur = vim.api.nvim_win_get_cursor(0)[1]
         local m1, m2 = vim.fn.line("'<"), vim.fn.line("'>")
-        if m1 > 0 and m2 >= m1 and vim.b[buf].volley_visual then
+        local fresh = vim.b[buf].volley_visual and m1 > 0 and m2 >= m1 and cur >= m1 and cur <= m2
+        vim.b[buf].volley_visual = false
+        if fresh then
             l1, l2 = m1, m2
         else
-            l1 = vim.api.nvim_win_get_cursor(0)[1]
-            l2 = l1
+            l1, l2 = cur, cur
         end
     end
     if l1 > l2 then
@@ -180,7 +194,7 @@ function M.annotate()
             })
             render.draw(buf)
             local c = annotations.counts()
-            notify(("comment added, %d waiting"):format(c.open))
+            notify(("comment added, %s waiting"):format(plural(c.open, "comment")))
         end
     )
 end
@@ -194,20 +208,18 @@ function M.queue()
     local items = vim.tbl_map(function(it)
         local where = it.lnum == it.end_lnum and tostring(it.lnum)
             or (it.lnum .. "-" .. it.end_lnum)
+        local at = ("%s:%s%s"):format(it.path, where, it.status == "stale" and " (stale)" or "")
         return {
-            text = ("%-30s %-8s %s%s"):format(
-                it.path,
-                where,
-                it.comment,
-                it.status == "stale" and "  (stale)" or ""
-            ),
+            text = ("%-30s %s"):format(at, it.comment),
+            left = it.comment,
+            right = at,
             file = it.abs,
             value = it,
         }
     end, list)
     picker.pick(
         items,
-        { prompt = ("volley queue  %d comments"):format(#list), preview = false },
+        { prompt = "volley queue  " .. plural(#list, "comment"), preview = false },
         function(item)
             vim.cmd.edit(vim.fn.fnameescape(item.file))
             pcall(vim.api.nvim_win_set_cursor, 0, { item.value.lnum, 0 })
@@ -221,7 +233,7 @@ local function show_reply(res)
     local lines = vim.split(res.reply or "", "\n", { plain = true })
     if res.cost then
         table.insert(lines, "")
-        table.insert(lines, ("— %s, $%.3f"):format(res.session or "session", res.cost))
+        table.insert(lines, ("%s, $%.3f"):format(res.session or "session", res.cost))
     end
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].filetype = "markdown"
@@ -232,6 +244,9 @@ local function show_reply(res)
     vim.api.nvim_win_set_buf(0, buf)
     vim.api.nvim_win_set_height(0, math.min(#lines + 2, 20))
     vim.wo.wrap = true
+    vim.wo.number = false
+    vim.wo.relativenumber = false
+    vim.wo.signcolumn = "no"
 end
 
 ---Send the queue to the agent.
@@ -247,7 +262,7 @@ function M.send()
     local ids = vim.tbl_map(function(it)
         return it.id
     end, pending)
-    notify(("sending %d comments"):format(#pending))
+    notify("sending " .. plural(#pending, "comment"))
     agent.send(payload, function(res)
         if not res.ok then
             return notify(
