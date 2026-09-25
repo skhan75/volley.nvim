@@ -307,13 +307,27 @@ T["without git"]["uses a snapshot you took earlier"] = function()
     eq(items[1]:find("a.py", 1, true) ~= nil, true)
 end
 
-T["without git"]["asks you to take one when there is none"] = function()
+T["without git"]["asks you to take one when there is none, and says where it looked"] = function()
     local plain = H.tmpdir()
     H.write(plain .. "/a.py", { "x = 1" })
     child.lua("vim.fn.chdir(...)", { plain })
     setup()
     child.lua("v().open()")
-    eq(child.lua_get("_G.notes[#_G.notes].msg:lower():find('snapshot') ~= nil"), true)
+    local msg = child.lua_get("_G.notes[#_G.notes].msg")
+    eq(msg:lower():find("snapshot") ~= nil, true)
+    eq(msg:lower():find("not a git repo") ~= nil, true)
+    eq(msg:find(vim.fn.fnamemodify(plain, ":t"), 1, true) ~= nil, true)
+end
+
+T["without git"]["does not blame git when you asked for snapshots"] = function()
+    local plain = H.tmpdir()
+    H.write(plain .. "/a.py", { "x = 1" })
+    child.lua("vim.fn.chdir(...)", { plain })
+    setup({ source = "snapshot" })
+    child.lua("v().open()")
+    local msg = child.lua_get("_G.notes[#_G.notes].msg")
+    eq(msg:lower():find("not a git repo"), nil)
+    eq(msg:lower():find("snapshot") ~= nil, true)
 end
 
 return T

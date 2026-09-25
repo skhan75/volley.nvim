@@ -49,7 +49,17 @@ function M.changeset()
         end
     end
     if not snapshot.exists(cwd) then
-        return nil, "no snapshot of this project yet, run :Volley snapshot before the agent starts"
+        local where = vim.fn.fnamemodify(cwd, ":~")
+        if want == "snapshot" then
+            return nil,
+                ("no snapshot of %s yet, run :Volley snapshot before the agent starts"):format(
+                    where
+                )
+        end
+        return nil,
+            ("%s is not a git repo and has no snapshot yet, run :Volley snapshot before the agent starts"):format(
+                where
+            )
     end
     local cs = snapshot.changeset(cwd, opts().snapshot)
     cache.changeset = cs
