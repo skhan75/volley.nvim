@@ -144,6 +144,25 @@ T["is_idle()"]["is false while the agent is printing, true once it stops"] = fun
     H.wait(child, "require('volley.agent').is_idle() == true", 5000, "the agent to go quiet")
 end
 
+T["is_idle()"]["is true the first time we look at a terminal that went quiet earlier"] = function()
+    child.config({ agent = { idle_ms = 300, pattern = "chatter" } })
+    local path = script("chatter", { "echo ready", "sleep 30" })
+    child.lua(
+        [[
+        local path = ...
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_call(buf, function()
+            vim.fn.jobstart({ path }, { term = true })
+        end)
+        _G.agent_buf = buf
+    ]],
+        { path }
+    )
+    -- It stops printing well before volley is ever asked about it.
+    H.sleep(900)
+    eq(child.lua_get("require('volley.agent').is_idle()"), true)
+end
+
 T["is_idle()"]["finds the agent terminal by what it is running"] = function()
     child.config({ agent = { idle_ms = 100, pattern = "claude" } })
     local path = script("claude", { "sleep 30" })

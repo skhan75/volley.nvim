@@ -90,6 +90,15 @@ end
 -- Terminals keep changing while the agent prints. Quiet means it is waiting.
 local last = {}
 
+-- How long to watch a terminal we have never seen before. A terminal we have
+-- no history for may have been quiet for an hour, and guessing "busy" would
+-- refuse the first send of every session.
+local FIRST_LOOK_MS = 200
+
+local function now_ms()
+    return vim.uv.hrtime() / 1e6
+end
+
 ---Has the agent stopped printing? True when we cannot see its terminal.
 function M.is_idle()
     local buf = M.terminal()
@@ -97,13 +106,21 @@ function M.is_idle()
         return true
     end
     local tick = vim.api.nvim_buf_get_changedtick(buf)
-    local now = vim.uv.hrtime() / 1e6
     local seen = last[buf]
-    if not seen or seen.tick ~= tick then
-        last[buf] = { tick = tick, at = now }
+    if not seen then
+        -- Nothing to compare against, so watch it for a moment instead.
+        vim.wait(FIRST_LOOK_MS, function()
+            return vim.api.nvim_buf_get_changedtick(buf) ~= tick
+        end, 20)
+        local after = vim.api.nvim_buf_get_changedtick(buf)
+        last[buf] = { tick = after, at = now_ms() }
+        return after == tick
+    end
+    if seen.tick ~= tick then
+        last[buf] = { tick = tick, at = now_ms() }
         return false
     end
-    return (now - seen.at) >= opts().idle_ms
+    return (now_ms() - seen.at) >= opts().idle_ms
 end
 
 ---How long the agent has been quiet, in milliseconds.
@@ -112,7 +129,7 @@ function M.quiet_for()
     if not buf or not last[buf] then
         return math.huge
     end
-    return (vim.uv.hrtime() / 1e6) - last[buf].at
+    return now_ms() - last[buf].at
 end
 
 -- A terminal in the middle of a line would treat our newlines as "send this
