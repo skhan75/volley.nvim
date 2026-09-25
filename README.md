@@ -54,9 +54,10 @@ still gets sent, with a line saying the code moved on.
 ## It waits for the agent
 
 Nothing is sent while the agent is still printing. volley finds the terminal it
-runs in, watches it go quiet, and tells you to wait if it has not. It looks at
-what is running inside that terminal too, so an agent you started in your shell
-counts.
+runs in, watches it go quiet, and tells you to wait if it has not. It goes by
+what is running inside each terminal rather than what the buffer is called, so
+an agent started in your shell counts and a sidebar named after your agent does
+not get mistaken for it.
 
 Set `agent.require_idle = false` if you would rather send whenever you like.
 

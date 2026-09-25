@@ -181,10 +181,12 @@ agent.cmd ~
         agent = { cmd = { "codex", "exec", "--json" }, pattern = "codex" }
 <
 agent.pattern, agent.idle_ms, agent.require_idle ~
-    volley looks for a terminal whose name, title or running processes
-    contain `pattern`, so an agent you started inside that terminal's shell
-    counts too. It is busy while its output keeps changing, and once it has
-    been quiet for `idle_ms` the comments can go.
+    volley looks for a terminal running `pattern`, checking the processes
+    inside each one first, so an agent you started in that terminal's shell
+    counts and a chat sidebar merely named after your agent does not. The
+    buffer name and title are only used when no process matches. It is busy
+    while its output keeps changing, and once it has been quiet for
+    `idle_ms` the comments can go.
 
     Set `require_idle = false` to send whenever you want, or mark the right
     terminal yourself with >

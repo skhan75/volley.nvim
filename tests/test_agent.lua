@@ -201,6 +201,31 @@ T["is_idle()"]["finds the agent started inside the terminal's shell"] = function
     )
 end
 
+T["is_idle()"]["prefers the terminal actually running the agent over a lookalike name"] = function()
+    child.config({ agent = { idle_ms = 100, pattern = "claude" } })
+    -- A sidebar buffer whose name matches but which runs nothing of the sort.
+    local decoy = script("sidebar", { "sleep 30" })
+    local real = script("claude", { "sleep 30" })
+    child.lua(
+        [[
+        local decoy, real = ...
+        local function term(path, name)
+            local buf = vim.api.nvim_create_buf(false, true)
+            vim.api.nvim_buf_call(buf, function()
+                vim.fn.jobstart({ path }, { term = true })
+            end)
+            if name then pcall(vim.api.nvim_buf_set_name, buf, name) end
+            return buf
+        end
+        _G.decoy_buf = term(decoy, "claude://chat")
+        _G.agent_buf = term(real)
+    ]],
+        { decoy, real }
+    )
+    H.wait(child, "require('volley.agent').terminal() ~= nil", 5000, "a terminal")
+    eq(child.lua_get("require('volley.agent').terminal() == _G.agent_buf"), true)
+end
+
 T["is_idle()"]["ignores a terminal running something else"] = function()
     child.config({ agent = { idle_ms = 100, pattern = "claude" } })
     local path = script("something-else", { "sleep 30" })

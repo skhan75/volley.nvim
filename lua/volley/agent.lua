@@ -67,20 +67,23 @@ function M.terminal()
     end
 
     local pattern = opts().pattern
-    local unmatched = {}
+
+    -- What is running beats what a buffer is called. A chat sidebar named
+    -- after your agent is not the agent, and it would otherwise win just by
+    -- being called the right thing.
+    local cmd, kids = processes()
+    for _, buf in ipairs(terminals) do
+        if running_here(vim.b[buf].terminal_job_pid, pattern, cmd, kids, 0) then
+            return buf
+        end
+    end
+
+    -- No process said so, which happens when ps is unavailable or the agent
+    -- runs somewhere we cannot see. Fall back to the name.
     for _, buf in ipairs(terminals) do
         local name = vim.api.nvim_buf_get_name(buf)
         local title = vim.b[buf].term_title or ""
         if (name .. " " .. title):find(pattern, 1, true) then
-            return buf
-        end
-        unmatched[#unmatched + 1] = buf
-    end
-
-    -- Nothing obvious, so ask the system what these terminals are running.
-    local cmd, kids = processes()
-    for _, buf in ipairs(unmatched) do
-        if running_here(vim.b[buf].terminal_job_pid, pattern, cmd, kids, 0) then
             return buf
         end
     end
