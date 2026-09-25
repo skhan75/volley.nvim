@@ -34,10 +34,16 @@ you think. The note shows up under the code.
 
 ![writing a comment on a selection](assets/comment.gif)
 
-Press `<leader>vs` when you are done. Everything you wrote goes to the agent as
-one message, and the answer opens in a split.
+Press `<leader>vs` when you are done. The comments go into the window the agent
+is already running in, as one message, so it answers there and asks you before
+it changes anything.
 
-![sending the queue and reading the reply](assets/send.gif)
+![the comments arriving in the agent's own window](assets/send.gif)
+
+If volley cannot see that window, it runs the agent as a command instead and
+puts the answer in a split.
+
+![the answer coming back in a split](assets/reply.gif)
 
 ## Your comments follow the code
 
@@ -48,9 +54,21 @@ still gets sent, with a line saying the code moved on.
 ## It waits for the agent
 
 Nothing is sent while the agent is still printing. volley finds the terminal it
-runs in, watches it go quiet, and tells you to wait if it has not.
+runs in, watches it go quiet, and tells you to wait if it has not. It looks at
+what is running inside that terminal too, so an agent you started in your shell
+counts.
 
 Set `agent.require_idle = false` if you would rather send whenever you like.
+
+## Where the comments go
+
+`agent.send` decides. `"auto"` is the default and means the agent's own window
+when volley can find it, the command otherwise.
+
+Sending into the window is usually what you want, because the agent answers
+where you can see it and asks for approval before it edits, the way it always
+does. The command route cannot ask, so it will tell you what it would change
+instead of changing it.
 
 ## Without git
 
@@ -85,6 +103,8 @@ require("volley").setup({
         annotate = "<leader>va", -- normal and visual mode
         queue = "<leader>vq",
         send = "<leader>vs",
+        next = "]v", -- move between the changes in this file
+        prev = "[v",
     },
     picker = "auto", -- "auto", "telescope", "snacks", "builtin" or "select"
     source = "auto", -- "auto", "git" or "snapshot"
@@ -96,6 +116,7 @@ require("volley").setup({
         ignore = {}, -- extra names to leave out
     },
     agent = {
+        send = "auto", -- "auto", "terminal" or "cli"
         cmd = { "claude", "--continue", "--print", "--output-format", "json" },
         pattern = "claude", -- how to spot the agent's terminal
         idle_ms = 1500, -- how long it must be quiet before sending
@@ -113,7 +134,10 @@ Run `:checkhealth volley` to see which picker and which source it will use.
 
 ## Other agents
 
-`agent.cmd` is just a command. The comments arrive as the last argument, and
+`agent.pattern` is how volley spots the right terminal, so set it to whatever
+your agent is called.
+
+`agent.cmd` is the command route. The comments arrive as the last argument, and
 whatever the command prints comes back in the split. It reads the JSON that
 `claude --print` produces, and plain text from anything else.
 

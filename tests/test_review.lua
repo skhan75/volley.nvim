@@ -252,6 +252,69 @@ T["send()"]["sends the comments and shows the answer"] = function()
     eq(shown, true)
 end
 
+-- A terminal that looks like the agent and echoes whatever it is sent.
+local function agent_terminal()
+    local path = (bin or H.tmpdir()) .. "/claude"
+    H.write(path, { "#!/bin/sh", "cat -v" })
+    vim.fn.setfperm(path, "rwxr-xr-x")
+    child.lua(
+        [[
+        local path = ...
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_call(buf, function()
+            vim.fn.jobstart({ path }, { term = true })
+        end)
+        _G.agent_buf = buf
+    ]],
+        { path }
+    )
+    H.wait(child, "require('volley.agent').terminal() == _G.agent_buf", 5000, "the terminal")
+end
+
+local function terminal_text()
+    return table.concat(
+        child.lua_get("vim.api.nvim_buf_get_lines(_G.agent_buf, 0, -1, false)"),
+        "\n"
+    )
+end
+
+T["send()"]["goes to the agent's own terminal when it can see one"] = function()
+    setup()
+    edit_file()
+    child.cmd("edit " .. dir .. "/src/billing.py")
+    child.lua("v().annotate()")
+    agent_terminal()
+    vim.fn.delete(bin .. "/args.txt") -- an earlier case may have left one
+    child.lua("v().send()")
+    H.wait(
+        child,
+        [[table.concat(vim.api.nvim_buf_get_lines(_G.agent_buf, 0, -1, false), "\n"):find("why is this hardcoded", 1, true) ~= nil]],
+        4000,
+        "the comments to reach the terminal"
+    )
+    eq(child.lua_get("require('volley.annotations').counts().sent"), 1)
+    -- and the command was left alone
+    eq(vim.fn.filereadable(bin .. "/args.txt"), 0)
+end
+
+T["send()"]["uses the command when you ask for it, terminal or not"] = function()
+    setup({ agent = { send = "cli" } })
+    vim.fn.delete(bin .. "/args.txt")
+    edit_file()
+    child.cmd("edit " .. dir .. "/src/billing.py")
+    child.lua("v().annotate()")
+    agent_terminal()
+    child.lua("v().send()")
+    H.wait(
+        child,
+        "require('volley.annotations').counts().sent == 1",
+        6000,
+        "the comment to be sent"
+    )
+    eq(vim.fn.filereadable(bin .. "/args.txt"), 1)
+    eq(terminal_text():find("why is this hardcoded", 1, true), nil)
+end
+
 T["send()"]["waits while the agent is still working"] = function()
     setup({ agent = { require_idle = true, idle_ms = 5000, pattern = "chatter" } })
     edit_file()

@@ -199,4 +199,75 @@ T["is_idle()"]["ignores a terminal running something else"] = function()
     eq(child.lua_get("require('volley.agent').terminal()"), vim.NIL)
 end
 
+T["to_terminal()"] = MiniTest.new_set({
+    hooks = {
+        pre_case = function()
+            _G.child = H.new_child()
+            child.start_editor()
+        end,
+        post_case = function()
+            child.stop()
+        end,
+    },
+})
+
+-- `cat -v` echoes what it is given and makes escape codes visible.
+local function agent_terminal(pattern)
+    local path = script(pattern or "claude", { "cat -v" })
+    child.lua(
+        [[
+        local path = ...
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_call(buf, function()
+            vim.fn.jobstart({ path }, { term = true })
+        end)
+        _G.agent_buf = buf
+    ]],
+        { path }
+    )
+    H.wait(child, "require('volley.agent').terminal() == _G.agent_buf", 5000, "the terminal")
+end
+
+local function terminal_text()
+    return table.concat(
+        child.lua_get("vim.api.nvim_buf_get_lines(_G.agent_buf, 0, -1, false)"),
+        "\n"
+    )
+end
+
+T["to_terminal()"]["types the comments into the agent's terminal"] = function()
+    child.config({ agent = { pattern = "claude" } })
+    agent_terminal()
+    eq(
+        child.lua_get([[require("volley.agent").to_terminal("1. a.py line 3\n   > why this way")]]),
+        true
+    )
+    H.wait(
+        child,
+        [[table.concat(vim.api.nvim_buf_get_lines(_G.agent_buf, 0, -1, false), "\n"):find("why this way", 1, true) ~= nil]],
+        3000,
+        "the comments to arrive"
+    )
+end
+
+T["to_terminal()"]["sends it as a paste, so newlines do not submit early"] = function()
+    child.config({ agent = { pattern = "claude" } })
+    agent_terminal()
+    child.lua([[require("volley.agent").to_terminal("first line\nsecond line")]])
+    H.wait(
+        child,
+        [[table.concat(vim.api.nvim_buf_get_lines(_G.agent_buf, 0, -1, false), "\n"):find("second line", 1, true) ~= nil]],
+        3000,
+        "the comments to arrive"
+    )
+    local text = terminal_text()
+    eq(text:find("[200~", 1, true) ~= nil, true)
+    eq(text:find("[201~", 1, true) ~= nil, true)
+end
+
+T["to_terminal()"]["says no when there is no agent terminal"] = function()
+    child.config({ agent = { pattern = "claude" } })
+    eq(child.lua_get([[require("volley.agent").to_terminal("anything")]]), false)
+end
+
 return T

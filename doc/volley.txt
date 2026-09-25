@@ -43,8 +43,9 @@ otherwise volley draws its own list.
    rest of the changes in that file.
 3. Put the cursor on a line, or select several, and press <leader>va. Type
    what you want to say. The comment appears under the code.
-4. Press <leader>vs. Everything you wrote goes to the agent in one message
-   and the answer opens in a split.
+4. Press <leader>vs. Everything you wrote goes to the agent in one message,
+   into its own window when volley can see it, otherwise as a command whose
+   answer opens in a split.
 
 A comment follows its code when the agent edits the file again. When the code
 is gone the comment is marked stale, and it is still sent with a note saying
@@ -101,6 +102,7 @@ Defaults >
             ignore = {},
         },
         agent = {
+            send = "auto",
             cmd = { "claude", "--continue", "--print", "--output-format", "json" },
             pattern = "claude",
             idle_ms = 1500,
@@ -155,8 +157,22 @@ snapshot ~
 ==============================================================================
 8. AGENTS                                                      *volley-agents*
 
+agent.send ~
+    Where the comments go.
+
+    "auto"      the agent's own window when one can be found, else the
+                command
+    "terminal"  always the agent's window, and nothing happens if volley
+                cannot find it
+    "cli"       always `agent.cmd`
+
+    Into the window, the comments arrive as one paste followed by enter, so
+    the agent answers where it is running and asks to approve its edits as
+    usual. As a command it cannot ask, so it describes the change instead of
+    making it.
+
 agent.cmd ~
-    The command the comments are sent to. The text is appended as one
+    The command route. The comments are sent to it The text is appended as one
     argument, so nothing goes through a shell. JSON in the shape
     `claude --print --output-format json` produces is understood, including
     the session id and the cost. Anything else is shown as it comes.

@@ -1,6 +1,6 @@
-# The comments go into the window the agent is already running in, so it
-# answers there and can ask before it edits anything.
-Output assets/send.gif
+# With no agent window in sight, volley runs the command instead and puts
+# the answer in a split.
+Output assets/reply.gif
 Source demo/tapes/_settings.tape
 
 Hide
@@ -8,21 +8,16 @@ Type "cd ~/app" Enter
 Type "cp ~/steps/billing.py ~/steps/routes.py ~/steps/settings.py src/" Enter
 Type "clear && nvim -u $VOLLEY_ROOT/demo/init.lua src/billing.py" Enter
 Sleep 2500ms
-Type ":botright vsplit | terminal ~/bin/claude-agent" Enter
-Sleep 2s
-Escape
-Type ":wincmd h" Enter
-Sleep 500ms
 Type "15G"
 Sleep 300ms
 Type " va"
 Sleep 300ms
 Type "where does 0.1 come from?"
 Enter
-Sleep 800ms
+Sleep 1s
 Show
 
 Sleep 1500ms
 Type " vs"
-Sleep 6s
-Sleep 2s
+Sleep 4s
+Sleep 3s

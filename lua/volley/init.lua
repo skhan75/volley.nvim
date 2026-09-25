@@ -259,6 +259,15 @@ local function show_reply(res)
     vim.wo.signcolumn = "no"
 end
 
+---Where the comments should go this time.
+local function route()
+    local want = opts().agent.send
+    if want ~= "auto" then
+        return want
+    end
+    return agent.terminal() and "terminal" or "cli"
+end
+
 ---Send the queue to the agent.
 function M.send()
     local pending = annotations.pending()
@@ -272,6 +281,19 @@ function M.send()
     local ids = vim.tbl_map(function(it)
         return it.id
     end, pending)
+
+    -- Into the agent's own window when we can, so it answers there and asks
+    -- you about its edits the way it normally would.
+    if route() == "terminal" and agent.to_terminal(payload) then
+        annotations.mark_sent(ids)
+        render.draw_all()
+        return notify(
+            ("%s sent, the agent is answering in its own window"):format(
+                plural(#pending, "comment")
+            )
+        )
+    end
+
     notify("sending " .. plural(#pending, "comment"))
     agent.send(payload, function(res)
         if not res.ok then

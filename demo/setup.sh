@@ -100,6 +100,40 @@ DISCOUNT_CODES = {"WELCOME": "0.1"}
 EOF
 
 
+# Stands in for the agent running in its own window. Takes the comments the
+# way a terminal takes a paste, then answers where it sits.
+cat >"$D/bin/claude-agent" <<'EOF'
+#!/usr/bin/env python3
+import os, re, sys, time
+
+# A real agent's ui turns echo off and reads pastes itself. Without this the
+# terminal would print the escape markers back at you.
+os.system("stty -echo")
+
+MARKERS = re.compile(r"\x1b\[20[01]~")
+
+print("\n  \u25cf claude  ~/app\n", flush=True)
+print("  Waiting for you.\n", flush=True)
+
+for raw in sys.stdin:
+    done = "\x1b[201~" in raw
+    line = MARKERS.sub("", raw).strip("\r\n")
+    if line:
+        print("  \u276f " + line, flush=True)
+    if done:
+        time.sleep(0.9)
+        print("\n  \u23fa Reading both comments\n", flush=True)
+        time.sleep(1.4)
+        print("  1. billing.py:16  the 0.1 was a", flush=True)
+        print("     placeholder. Reading it from", flush=True)
+        print("     DISCOUNT_CODES instead.", flush=True)
+        print("  2. routes.py:11  adding a test for", flush=True)
+        print("     a missing code.\n", flush=True)
+        time.sleep(0.6)
+        print("  Apply these two edits? (y/n)", flush=True)
+EOF
+chmod +x "$D/bin/claude-agent"
+
 # Stands in for `claude --continue --print`. Prints what the real CLI prints.
 cat >"$D/bin/claude-demo" <<'EOF'
 #!/bin/sh

@@ -23,6 +23,11 @@ M.defaults = {
     agent = {
         -- How the comments reach the agent. The payload is appended as one
         -- argument, so nothing goes through a shell.
+        -- Where the comments go. "terminal" types them into the agent's own
+        -- window, so it answers there and can ask you to approve its edits.
+        -- "cli" runs `cmd` instead and shows the answer in a split. "auto"
+        -- is terminal when one can be found, cli otherwise.
+        send = "auto",
         cmd = { "claude", "--continue", "--print", "--output-format", "json" },
         pattern = "claude", -- how to spot the agent's terminal
         idle_ms = 1500, -- how long it must be quiet before sending
@@ -54,6 +59,7 @@ local function validate(o)
     one_of("picker", o.picker, { "auto", "telescope", "snacks", "builtin", "select" })
     one_of("source", o.source, { "auto", "git", "snapshot" })
     one_of("stale", o.stale, { "keep", "drop" })
+    one_of("agent.send", o.agent.send, { "auto", "terminal", "cli" })
     check("signs", o.signs, function(v)
         return type(v) == "boolean"
     end, "a boolean")

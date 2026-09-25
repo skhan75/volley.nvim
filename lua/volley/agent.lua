@@ -115,6 +115,31 @@ function M.quiet_for()
     return (vim.uv.hrtime() / 1e6) - last[buf].at
 end
 
+-- A terminal in the middle of a line would treat our newlines as "send this
+-- now", so the comments go in the way a paste does, between these markers.
+local PASTE_START, PASTE_END = "\27[200~", "\27[201~"
+
+---Type the comments into the agent's own terminal and press enter, so it
+---answers where it is running, with the approvals it normally asks for.
+---@param payload string
+---@return boolean sent
+function M.to_terminal(payload)
+    local buf = M.terminal()
+    local chan = buf and vim.b[buf].terminal_job_id
+    if not chan then
+        return false
+    end
+    local ok = pcall(vim.fn.chansend, chan, PASTE_START .. payload .. PASTE_END)
+    if not ok then
+        return false
+    end
+    -- Enter goes separately, after the paste has been read as one piece.
+    vim.defer_fn(function()
+        pcall(vim.fn.chansend, chan, "\r")
+    end, 60)
+    return true
+end
+
 local function parse(stdout)
     local ok, decoded = pcall(vim.json.decode, stdout)
     if ok and type(decoded) == "table" then
