@@ -155,6 +155,9 @@ local function selection()
     if mode:find("[vV\22]") then
         l1, l2 = vim.fn.line("v"), vim.fn.line(".")
         vim.api.nvim_feedkeys(vim.keycode("<Esc>"), "nx", false)
+        -- Leaving visual mode here is ours, not yours, so it must not look
+        -- like a fresh selection to the next comment.
+        vim.b[buf].volley_visual = false
     else
         -- After leaving visual mode the marks still hold the last selection,
         -- which is what `:Volley annotate` sees. It counts only while the

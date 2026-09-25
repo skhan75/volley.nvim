@@ -198,6 +198,22 @@ T["annotate()"]["puts a comment under the whole block, not inside it"] = functio
     eq(mark, 8)
 end
 
+T["annotate()"]["does not reuse a selection for the next comment inside it"] = function()
+    setup()
+    edit_file()
+    child.cmd("edit " .. dir .. "/src/billing.py")
+    child.api.nvim_win_set_cursor(0, { 7, 0 })
+    child.type_keys("Vj") -- still in visual mode, the way the mapping is used
+    child.lua("v().annotate()")
+    -- the next comment lands on a line that happens to sit inside the old range
+    child.api.nvim_win_set_cursor(0, { 8, 0 })
+    child.lua("v().annotate()")
+    local list = child.lua_get("require('volley.annotations').list()")
+    eq(#list, 2)
+    eq({ list[1].lnum, list[1].end_lnum }, { 7, 8 })
+    eq({ list[2].lnum, list[2].end_lnum }, { 8, 8 })
+end
+
 T["annotate()"]["writes nothing when you cancel the prompt"] = function()
     setup()
     edit_file()
