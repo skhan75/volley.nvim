@@ -29,6 +29,15 @@ local function fake_cli(dir, body, code)
     return path
 end
 
+-- A process with a name we can look for. `exec -a` is not portable (dash has
+-- no such flag), so the name has to come from the file itself.
+local function script(name, body)
+    local path = H.tmpdir() .. "/" .. name
+    H.write(path, vim.list_extend({ "#!/bin/sh" }, body))
+    vim.fn.setfperm(path, "rwxr-xr-x")
+    return path
+end
+
 T["config"] = MiniTest.new_set()
 
 T["config"]["fills in the defaults"] = function()
@@ -115,13 +124,21 @@ end
 
 T["is_idle()"]["is false while the agent is printing, true once it stops"] = function()
     child.config({ agent = { idle_ms = 300, pattern = "chatter" } })
-    child.lua([[
+    local path = script("chatter", {
+        "for i in 1 2 3 4 5 6 7 8; do echo working; sleep 0.2; done",
+        "sleep 60",
+    })
+    child.lua(
+        [[
+        local path = ...
         local buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_call(buf, function()
-            vim.fn.jobstart({ "sh", "-c", "exec -a chatter sh -c 'for i in 1 2 3 4 5 6 7 8; do echo working; sleep 0.2; done; exec sleep 60'" }, { term = true })
+            vim.fn.jobstart({ path }, { term = true })
         end)
         _G.agent_buf = buf
-    ]])
+    ]],
+        { path }
+    )
     H.sleep(500)
     eq(child.lua_get("require('volley.agent').is_idle()"), false)
     H.wait(child, "require('volley.agent').is_idle() == true", 5000, "the agent to go quiet")
@@ -129,14 +146,57 @@ end
 
 T["is_idle()"]["finds the agent terminal by what it is running"] = function()
     child.config({ agent = { idle_ms = 100, pattern = "claude" } })
-    child.lua([[
+    local path = script("claude", { "sleep 30" })
+    child.lua(
+        [[
+        local path = ...
         local buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_call(buf, function()
-            vim.fn.jobstart({ "sh", "-c", "exec -a claude sleep 30" }, { term = true })
+            vim.fn.jobstart({ path }, { term = true })
         end)
-    ]])
-    H.sleep(300)
-    eq(child.lua_get("require('volley.agent').terminal() ~= nil"), true)
+    ]],
+        { path }
+    )
+    H.wait(child, "require('volley.agent').terminal() ~= nil", 5000, "the terminal to be found")
+end
+
+T["is_idle()"]["finds the agent started inside the terminal's shell"] = function()
+    child.config({ agent = { idle_ms = 100, pattern = "claude" } })
+    local path = script("claude", { "sleep 30" })
+    child.lua(
+        [[
+        local path = ...
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_call(buf, function()
+            _G.chan = vim.fn.jobstart({ "sh" }, { term = true })
+        end)
+        vim.fn.chansend(_G.chan, path .. "\n")
+    ]],
+        { path }
+    )
+    H.wait(
+        child,
+        "require('volley.agent').terminal() ~= nil",
+        5000,
+        "the agent process to be found"
+    )
+end
+
+T["is_idle()"]["ignores a terminal running something else"] = function()
+    child.config({ agent = { idle_ms = 100, pattern = "claude" } })
+    local path = script("something-else", { "sleep 30" })
+    child.lua(
+        [[
+        local path = ...
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_call(buf, function()
+            vim.fn.jobstart({ path }, { term = true })
+        end)
+    ]],
+        { path }
+    )
+    H.sleep(600)
+    eq(child.lua_get("require('volley.agent').terminal()"), vim.NIL)
 end
 
 return T

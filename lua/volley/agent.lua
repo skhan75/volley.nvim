@@ -8,34 +8,83 @@ local function opts()
     return config.options.agent
 end
 
+-- Every running process, as { command by pid } and { children by pid }. The
+-- agent is usually not the terminal's own process but something you started
+-- in the shell it runs, so we need the whole tree to find it.
+local function processes()
+    local ok, res = pcall(function()
+        return vim.system({ "ps", "-eo", "pid=,ppid=,command=" }, { text = true }):wait()
+    end)
+    local cmd, kids = {}, {}
+    if not ok or res.code ~= 0 then
+        return cmd, kids
+    end
+    for line in (res.stdout or ""):gmatch("[^\n]+") do
+        local pid, ppid, command = line:match("^%s*(%d+)%s+(%d+)%s+(.*)$")
+        if pid then
+            pid, ppid = tonumber(pid), tonumber(ppid)
+            cmd[pid] = command
+            kids[ppid] = kids[ppid] or {}
+            table.insert(kids[ppid], pid)
+        end
+    end
+    return cmd, kids
+end
+
+local MAX_DEPTH = 8
+
+local function running_here(pid, pattern, cmd, kids, depth)
+    if not pid or (depth or 0) > MAX_DEPTH then
+        return false
+    end
+    if cmd[pid] and cmd[pid]:find(pattern, 1, true) then
+        return true
+    end
+    for _, kid in ipairs(kids[pid] or {}) do
+        if running_here(kid, pattern, cmd, kids, (depth or 0) + 1) then
+            return true
+        end
+    end
+    return false
+end
+
 ---The terminal buffer the agent is running in, if we can see one.
----Marked buffers win; otherwise we look at what each terminal is running.
+---A buffer you marked yourself wins. Otherwise we look at what each terminal
+---is called, and at what is running inside it.
 ---@return integer|nil
 function M.terminal()
-    local fallback
+    local terminals = {}
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
         if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == "terminal" then
             if vim.b[buf].volley_agent then
                 return buf
             end
-            local name = vim.api.nvim_buf_get_name(buf)
-            local title = vim.b[buf].term_title or ""
-            local pid = vim.b[buf].terminal_job_pid
-            local cmd = ""
-            if pid then
-                local res = vim.system(
-                    { "ps", "-o", "command=", "-p", tostring(pid) },
-                    { text = true }
-                )
-                    :wait()
-                cmd = res.stdout or ""
-            end
-            if (name .. " " .. title .. " " .. cmd):find(opts().pattern, 1, true) then
-                fallback = fallback or buf
-            end
+            terminals[#terminals + 1] = buf
         end
     end
-    return fallback
+    if #terminals == 0 then
+        return nil
+    end
+
+    local pattern = opts().pattern
+    local unmatched = {}
+    for _, buf in ipairs(terminals) do
+        local name = vim.api.nvim_buf_get_name(buf)
+        local title = vim.b[buf].term_title or ""
+        if (name .. " " .. title):find(pattern, 1, true) then
+            return buf
+        end
+        unmatched[#unmatched + 1] = buf
+    end
+
+    -- Nothing obvious, so ask the system what these terminals are running.
+    local cmd, kids = processes()
+    for _, buf in ipairs(unmatched) do
+        if running_here(vim.b[buf].terminal_job_pid, pattern, cmd, kids, 0) then
+            return buf
+        end
+    end
+    return nil
 end
 
 -- Terminals keep changing while the agent prints. Quiet means it is waiting.

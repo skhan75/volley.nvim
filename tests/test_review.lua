@@ -257,12 +257,20 @@ T["send()"]["waits while the agent is still working"] = function()
     edit_file()
     child.cmd("edit " .. dir .. "/src/billing.py")
     child.lua("v().annotate()")
-    child.lua([[
+    -- a terminal that keeps printing, the way a working agent does
+    local chatter = (bin or H.tmpdir()) .. "/chatter"
+    H.write(chatter, { "#!/bin/sh", "while true; do echo working; sleep 0.2; done" })
+    vim.fn.setfperm(chatter, "rwxr-xr-x")
+    child.lua(
+        [[
+        local path = ...
         local buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_call(buf, function()
-            vim.fn.jobstart({ "sh", "-c", "exec -a chatter sh -c 'while true; do echo working; sleep 0.2; done'" }, { term = true })
+            vim.fn.jobstart({ path }, { term = true })
         end)
-    ]])
+    ]],
+        { chatter }
+    )
     H.sleep(400)
     child.lua("v().send()")
     eq(child.lua_get("_G.notes[#_G.notes].msg:lower():find('busy') ~= nil"), true)
