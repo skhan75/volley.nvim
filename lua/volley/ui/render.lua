@@ -30,7 +30,9 @@ function M.draw(buf)
     for n, it in ipairs(annotations.list()) do
         if it.abs == abs and it.status ~= "sent" then
             local stale = it.status == "stale"
-            local row = math.min(math.max(it.lnum, 1), last) - 1
+            -- Under the last line of the block, so a comment on a two line
+            -- call does not land in the middle of it.
+            local row = math.min(math.max(it.end_lnum or it.lnum, 1), last) - 1
             local label = ("▌%d %s%s"):format(
                 n,
                 it.comment,

@@ -180,6 +180,24 @@ T["annotate()"]["forgets a selection once you have moved away from it"] = functi
     eq({ list[2].lnum, list[2].end_lnum }, { 7, 8 })
 end
 
+T["annotate()"]["puts a comment under the whole block, not inside it"] = function()
+    setup()
+    edit_file()
+    child.cmd("edit " .. dir .. "/src/billing.py")
+    child.api.nvim_win_set_cursor(0, { 7, 0 })
+    child.type_keys("Vj", "<Esc>")
+    child.lua("v().annotate()")
+    local mark = child.lua_get([[
+        (function()
+            for _, m in ipairs(vim.api.nvim_buf_get_extmarks(0, vim.api.nvim_create_namespace("volley"), 0, -1, { details = true })) do
+                if m[4].virt_lines then return m[2] + 1 end
+            end
+        end)()
+    ]])
+    -- the comment covers lines 7 and 8, so it belongs under line 8
+    eq(mark, 8)
+end
+
 T["annotate()"]["writes nothing when you cancel the prompt"] = function()
     setup()
     edit_file()
