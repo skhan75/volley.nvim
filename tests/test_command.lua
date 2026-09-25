@@ -77,10 +77,20 @@ T["keys"]["maps opening and annotating out of the box"] = function()
     eq(child.lua_get("vim.fn.maparg('<leader>va', 'x') ~= ''"), true)
 end
 
+T["keys"]["maps jumping between the changes in a file"] = function()
+    child.setup({})
+    eq(child.lua_get("vim.fn.maparg(']v', 'n') ~= ''"), true)
+    eq(child.lua_get("vim.fn.maparg('[v', 'n') ~= ''"), true)
+end
+
 T["keys"]["maps nothing you turned off"] = function()
-    child.setup({ key = false, keys = { annotate = false, queue = false, send = false } })
+    child.setup({
+        key = false,
+        keys = { annotate = false, queue = false, send = false, next = false, prev = false },
+    })
     eq(child.lua_get("vim.fn.maparg('<leader>v', 'n')"), "")
     eq(child.lua_get("vim.fn.maparg('<leader>va', 'x')"), "")
+    eq(child.lua_get("vim.fn.maparg(']v', 'n')"), "")
 end
 
 T["checkhealth"] = MiniTest.new_set()

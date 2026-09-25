@@ -8,6 +8,8 @@ M.defaults = {
         annotate = "<leader>va", -- normal and visual mode
         queue = "<leader>vq",
         send = "<leader>vs",
+        next = "]v", -- move between the changes in this file
+        prev = "[v",
     },
     picker = "auto", -- "auto", "telescope", "snacks", "builtin" or "select"
     source = "auto", -- "auto", "git" or "snapshot"

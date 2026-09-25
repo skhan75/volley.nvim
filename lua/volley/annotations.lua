@@ -96,11 +96,14 @@ end
 ---@param abs string
 ---@param lines string[] the file's current lines
 function M.reanchor(abs, lines)
-    for _, it in pairs(items) do
+    local drop = require("volley.config").options.stale == "drop"
+    for id, it in pairs(items) do
         if it.abs == abs and it.status ~= "sent" then
             local first, last = find(it.code, lines)
             if first then
                 it.lnum, it.end_lnum, it.status = first, math.min(last, #lines), "open"
+            elseif drop then
+                items[id] = nil
             else
                 it.status = "stale"
             end

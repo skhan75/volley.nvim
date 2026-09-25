@@ -1,0 +1,233 @@
+*volley.txt*   Review what your AI agent changed, and answer back
+
+==============================================================================
+CONTENTS                                                     *volley-contents*
+
+  1. Introduction ........................... |volley-introduction|
+  2. Install ................................ |volley-install|
+  3. The loop ............................... |volley-loop|
+  4. Commands ............................... |volley-commands|
+  5. Mappings ............................... |volley-mappings|
+  6. Options ................................ |volley-config|
+  7. Sources ................................ |volley-sources|
+  8. Agents ................................. |volley-agents|
+  9. Highlights ............................. |volley-highlights|
+ 10. Lua API ............................... |volley-api|
+ 11. Health ................................ |volley-health|
+
+==============================================================================
+1. INTRODUCTION                                          *volley-introduction*
+
+An agent edits a dozen files while you are reading something else. volley
+lists what it touched, shows the edits, and lets you write a comment on any
+line or selection. The comments go back to the agent as one message, and its
+answer opens in a split.
+
+Nothing is sent while the agent is still working. See |volley-agents|.
+
+==============================================================================
+2. INSTALL                                                    *volley-install*
+
+With lazy.nvim >
+    { "skhan75/volley.nvim", event = "VeryLazy", opts = {} }
+<
+There are no dependencies. telescope or snacks are used when installed,
+otherwise volley draws its own list.
+
+==============================================================================
+3. THE LOOP                                                      *volley-loop*
+
+1. The agent stops. Press <leader>v for the files it changed, most changed
+   first, with the new lines beside the list.
+2. Press <CR> to open one at its first change. ]v and [v move between the
+   rest of the changes in that file.
+3. Put the cursor on a line, or select several, and press <leader>va. Type
+   what you want to say. The comment appears under the code.
+4. Press <leader>vs. Everything you wrote goes to the agent in one message
+   and the answer opens in a split.
+
+A comment follows its code when the agent edits the file again. When the code
+is gone the comment is marked stale, and it is still sent with a note saying
+so.
+
+==============================================================================
+4. COMMANDS                                                  *volley-commands*
+
+                                                                     *:Volley*
+:Volley                 Open the review.
+:Volley annotate        Comment on the current line or selection.
+:Volley queue           Show every comment written so far.
+:Volley send            Send the comments to the agent.
+:Volley next            Jump to the next change in this file.
+:Volley prev            Jump to the previous change in this file.
+:Volley snapshot        Take a baseline for a project without git.
+:Volley clear           Throw the comments away.
+:Volley status          Show how many are open, sent and stale.
+
+==============================================================================
+5. MAPPINGS                                                  *volley-mappings*
+
+Set by |volley.setup()| unless you turn them off.
+
+    <leader>v       open the review
+    <leader>va      comment on the line or selection (normal and visual)
+    <leader>vq      show the queue
+    <leader>vs      send the comments
+    ]v              next change in this file
+    [v              previous change in this file
+
+Any of them can be `false`, and then you map the |volley-api| calls yourself.
+
+==============================================================================
+6. OPTIONS                                                     *volley-config*
+
+Defaults >
+    require("volley").setup({
+        key = "<leader>v",
+        keys = {
+            annotate = "<leader>va",
+            queue = "<leader>vq",
+            send = "<leader>vs",
+            next = "]v",
+            prev = "[v",
+        },
+        picker = "auto",
+        source = "auto",
+        signs = true,
+        stale = "keep",
+        snapshot = {
+            max_files = 5000,
+            max_filesize = 1024 * 1024,
+            ignore = {},
+        },
+        agent = {
+            cmd = { "claude", "--continue", "--print", "--output-format", "json" },
+            pattern = "claude",
+            idle_ms = 1500,
+            require_idle = true,
+        },
+    })
+<
+picker ~
+    "auto"      telescope, then snacks, then volley's own list
+    "telescope" telescope.nvim
+    "snacks"    snacks.nvim picker
+    "builtin"   volley's list, with the edits beside it
+    "select"    |vim.ui.select()|, so your own ui handles it
+
+source ~
+    "auto"      git when the project is a repo, otherwise a snapshot
+    "git"       git only
+    "snapshot"  snapshots only
+
+signs ~
+    Put a mark in the sign column next to every line you commented on.
+
+stale ~
+    "keep"      keep a comment whose code is gone and mark it stale
+    "drop"      remove it
+
+snapshot.max_files, snapshot.max_filesize ~
+    Limits for the snapshot source. Bigger files are skipped, as are binary
+    files and the usual noise (.git, node_modules, target, dist, build).
+
+snapshot.ignore ~
+    Extra directory or file names to leave out.
+
+agent ~
+    See |volley-agents|.
+
+==============================================================================
+7. SOURCES                                                    *volley-sources*
+
+git ~
+    The review is everything that differs from HEAD, staged or not, including
+    files the agent created. Nothing is written to your repo and no index is
+    touched.
+
+snapshot ~
+    For a folder that is not a repo. Run `:Volley snapshot` before you set the
+    agent going and volley copies the project into >
+        stdpath("cache")/volley/snapshots/
+<   The review then compares the folder with that copy. Take another snapshot
+    whenever you want a fresh starting point.
+
+==============================================================================
+8. AGENTS                                                      *volley-agents*
+
+agent.cmd ~
+    The command the comments are sent to. The text is appended as one
+    argument, so nothing goes through a shell. JSON in the shape
+    `claude --print --output-format json` produces is understood, including
+    the session id and the cost. Anything else is shown as it comes.
+
+    Codex, for example >
+        agent = { cmd = { "codex", "exec", "--json" }, pattern = "codex" }
+<
+agent.pattern, agent.idle_ms, agent.require_idle ~
+    volley looks for a terminal buffer running `pattern` and treats it as
+    busy while its output keeps changing. Once it has been quiet for
+    `idle_ms` the comments can go.
+
+    Set `require_idle = false` to send whenever you want, or mark the right
+    terminal yourself with >
+        vim.b[buf].volley_agent = true
+<
+==============================================================================
+9. HIGHLIGHTS                                              *volley-highlights*
+
+Every group links to a standard one, so your colorscheme is in charge.
+
+    VolleyAdd         DiffAdd        lines the agent added
+    VolleyChange      DiffChange     lines it rewrote
+    VolleyRemoved     DiffDelete     lines it removed
+    VolleyComment     Comment        your comment under the code
+    VolleyMarker      WarningMsg     the number in front of it
+    VolleyStale       ErrorMsg       a comment whose code is gone
+    VolleySign        WarningMsg     the sign column mark
+    VolleyFloat       NormalFloat    the list and the preview
+    VolleyBorder      FloatBorder    their border
+    VolleyTitle       FloatTitle     the title
+    VolleySelected    Visual         the row you are on
+
+==============================================================================
+10. LUA API                                                       *volley-api*
+
+volley.setup({opts})                                         *volley.setup()*
+    Read |volley-config|. Called for you by `opts = {}`.
+
+volley.open()                                                 *volley.open()*
+    Open the review.
+
+volley.annotate()                                         *volley.annotate()*
+    Comment on the current line or selection.
+
+volley.queue()                                               *volley.queue()*
+    Show the queue.
+
+volley.send()                                                 *volley.send()*
+    Send it.
+
+volley.next_hunk(), volley.prev_hunk()                   *volley.next_hunk()*
+    Move between the changes in this file.
+
+volley.snapshot()                                         *volley.snapshot()*
+    Take a baseline.
+
+volley.clear()                                               *volley.clear()*
+    Throw the comments away.
+
+volley.status()                                             *volley.status()*
+    Returns `{ open = n, sent = n, stale = n }`, handy in a statusline.
+
+volley.changeset()                                       *volley.changeset()*
+    Returns what changed, as
+    `{ root, source, files = { { path, abs, status, counts, hunks } } }`.
+
+==============================================================================
+11. HEALTH                                                     *volley-health*
+
+`:checkhealth volley` reports your Neovim version, whether setup() ran, the
+picker and source it will use, and whether the agent command is on your PATH.
+
+vim:tw=78:ts=8:ft=help:norl:

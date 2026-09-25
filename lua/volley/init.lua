@@ -388,6 +388,8 @@ function M.setup(user_opts)
     map({ "n", "x" }, opts().keys.annotate, M.annotate, "comment on these lines")
     map("n", opts().keys.queue, M.queue, "show the comment queue")
     map("n", opts().keys.send, M.send, "send the comments")
+    map("n", opts().keys.next, M.next_hunk, "next change in this file")
+    map("n", opts().keys.prev, M.prev_hunk, "previous change in this file")
 
     M._did_setup = true
 end

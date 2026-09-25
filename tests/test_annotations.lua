@@ -1,5 +1,13 @@
-local T = MiniTest.new_set()
 local eq = MiniTest.expect.equality
+
+local T = MiniTest.new_set({
+    hooks = {
+        -- Options are global, so every case starts from the defaults.
+        pre_case = function()
+            require("volley.config").setup({})
+        end,
+    },
+})
 
 local function ann()
     package.loaded["volley.annotations"] = nil
@@ -99,6 +107,16 @@ T["reanchor"]["marks it stale when the code is gone"] = function()
     local id = add(a)
     a.reanchor("/proj/src/billing.py", { "nothing", "like", "the original" })
     eq(a.get(id).status, "stale")
+end
+
+T["reanchor"]["drops it instead when you asked for that"] = function()
+    require("volley.config").setup({ stale = "drop" })
+    local a = ann()
+    local id = add(a)
+    add(a, { path = "other.py", abs = "/proj/other.py", comment = "somewhere else" })
+    a.reanchor("/proj/src/billing.py", { "nothing", "like", "the original" })
+    eq(a.get(id), nil)
+    eq(#a.list(), 1)
 end
 
 T["reanchor"]["leaves other files alone"] = function()
