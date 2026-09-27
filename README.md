@@ -157,12 +157,12 @@ agent = { cmd = { "codex", "exec", "--json" }, pattern = "codex" }
 
 ## How it is different
 
-- gitsigns and diffview show you a diff. volley lets you write on it and hands
-  it back to the agent.
-- The agent's own terminal scrollback tells you what it claims it did. volley
-  shows you the lines on disk.
-- Copying file names and line numbers into a chat box does the same job by
-  hand, three windows at a time.
+A diff shows you what changed. volley lets you write on it. Comments attach to
+the lines they are about, follow that code when the agent edits again, and go
+back as one message the agent can answer point by point.
+
+It reads the files on disk, not the agent's account of them. What it lists is
+what actually landed, which is not always the same thing.
 
 ## Development
 
