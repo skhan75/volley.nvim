@@ -47,9 +47,16 @@ puts the answer in a split.
 
 ## Your comments follow the code
 
-The agent edits the same file again and your note moves with the lines it was
-written on. If the code it pointed at is gone, the note is marked stale and
-still gets sent, with a line saying the code moved on.
+A comment remembers the file as it was when you wrote it. When the agent edits
+that file again, volley diffs the two versions and carries your comment through
+the changes, so it lands on the same lines even when another block in the file
+looks identical.
+
+If the agent rewrites the lines under a comment, the comment stays put and is
+marked `(code changed since)`, and the agent is told the same. If the code is
+cut and pasted somewhere else, volley finds it by its text. If it is gone
+altogether, the comment is marked stale and still gets sent, with a line saying
+so, rather than being dropped or pointed at the wrong code.
 
 ## It waits for the agent
 
@@ -163,6 +170,70 @@ back as one message the agent can answer point by point.
 
 It reads the files on disk, not the agent's account of them. What it lists is
 what actually landed, which is not always the same thing.
+
+## Questions
+
+**How do comments stay on the right lines when the agent edits again?**
+Each comment keeps a copy of the file from the moment you wrote it. On every
+redraw volley diffs that copy against the file as it is now and moves the
+comment through the hunks. That is arithmetic on a diff, not a search, so a
+second block that looks the same cannot steal it. When the diff says the lines
+are gone, it falls back to searching for the text, which is what finds a block
+the agent moved. If nothing matches, the comment goes stale.
+
+**Does it use an LLM or fuzzy matching for that?**
+No. A diff, and an exact text match as the fallback. Both run in well under a
+millisecond and neither needs a network.
+
+**What if the agent rewrites the lines under my comment?**
+The comment stays where it is and is marked `(code changed since)`. The agent
+is told the same, along with the lines you originally commented on.
+
+**What about formatters?**
+A reindent or a whitespace cleanup is not a change to the code, so a comment
+rides through a formatter run untouched. Only the words have to stay the same.
+
+**What if the agent deletes the code I commented on?**
+The comment is marked stale, stays visible, and is still sent with a note that
+the code moved or is gone. Set `stale = "drop"` if you would rather it vanish.
+
+**Does it need git?**
+No. git is used when the folder is a repo. Otherwise run `:Volley snapshot`
+before the agent starts and volley compares against that.
+
+**Does it need tailf or glassterm?**
+No. All three work alone. tailf shows the agent's edits arriving live and
+glassterm keeps the agent in a float, which makes a nice loop, but volley only
+needs the files on disk and a terminal it can find.
+
+**Which agents does it work with?**
+Anything that runs in a terminal inside Neovim. It looks for a terminal
+running `agent.pattern`, which is `claude` by default. Set it to `codex`,
+`aider` or whatever yours is called.
+
+**Does it send anything on its own?**
+No. Comments sit in the queue until you press `<leader>vs`.
+
+**Why does it say the agent is busy?**
+Because its terminal was still printing. Sending mid answer would land your
+comments in the middle of whatever it is writing. Wait for it to stop, or set
+`agent.require_idle = false`.
+
+**Do I need telescope?**
+No. telescope or snacks are used if you have them, otherwise volley draws its
+own list with the changed lines beside it.
+
+**Can the agent apply changes from my comments?**
+When the comments go into its own terminal, yes, with the same approval
+prompts it always shows. The command route (`agent.send = "cli"`) cannot ask
+for approval, so there it describes the change instead of making it.
+
+**Does it cost anything extra?**
+Sending into the terminal is the same session you already have open. The
+command route starts a separate `claude --print` call, which is billed as one.
+
+**Which Neovim?**
+0.11 or newer.
 
 ## Development
 

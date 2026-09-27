@@ -33,15 +33,17 @@ function M.draw(buf)
             -- Under the last line of the block, so a comment on a two line
             -- call does not land in the middle of it.
             local row = math.min(math.max(it.end_lnum or it.lnum, 1), last) - 1
-            local label = ("▌%d %s%s"):format(
-                n,
-                it.comment,
-                stale and "   (code moved or gone)" or ""
-            )
+            local label = ("▌%d %s"):format(n, it.comment)
+            local chunks = { { label, stale and "VolleyStale" or "VolleyComment" } }
+            if stale then
+                chunks[#chunks + 1] = { "   (code moved or gone)", "VolleyStale" }
+            elseif it.changed then
+                chunks[#chunks + 1] = { "   (code changed since)", "VolleyMarker" }
+            end
             pcall(vim.api.nvim_buf_set_extmark, buf, M.ns, row, 0, {
                 sign_text = config.options.signs and "▌" or nil,
                 sign_hl_group = config.options.signs and "VolleySign" or nil,
-                virt_lines = { { { label, stale and "VolleyStale" or "VolleyComment" } } },
+                virt_lines = { chunks },
                 virt_lines_above = false,
             })
             if not stale then

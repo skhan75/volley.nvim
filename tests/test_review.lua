@@ -214,6 +214,74 @@ T["annotate()"]["does not reuse a selection for the next comment inside it"] = f
     eq({ list[2].lnum, list[2].end_lnum }, { 8, 8 })
 end
 
+T["annotate()"]["keeps a baseline, so two identical blocks are told apart"] = function()
+    setup()
+    H.write(dir .. "/src/twice.py", { "def a():", "    return 1", "", "def b():", "    return 1" })
+    child.cmd("edit " .. dir .. "/src/twice.py")
+    child.api.nvim_win_set_cursor(0, { 5, 0 }) -- the second `return 1`
+    child.lua("v().annotate()")
+    -- the agent adds two lines at the top; a text search would now find the first one
+    child.lua([[
+        vim.api.nvim_buf_set_lines(0, 0, 0, false, { "import os", "" })
+        v().refresh()
+    ]])
+    eq(child.lua_get("require('volley.annotations').list()[1].lnum"), 7)
+end
+
+T["annotate()"]["says in the buffer when the code under a comment changed"] = function()
+    setup()
+    edit_file()
+    child.cmd("edit " .. dir .. "/src/billing.py")
+    child.api.nvim_win_set_cursor(0, { 7, 0 })
+    child.lua("v().annotate()")
+    child.lua([[
+        vim.api.nvim_buf_set_lines(0, 6, 7, false, { "def discount(x, code):" })
+        v().refresh()
+    ]])
+    local marks = vim.inspect(child.lua_get([[
+        vim.api.nvim_buf_get_extmarks(0, vim.api.nvim_create_namespace("volley"), 0, -1, { details = true })
+    ]]))
+    eq(marks:find("code changed since", 1, true) ~= nil, true)
+    eq(child.lua_get("require('volley.annotations').list()[1].lnum"), 7)
+end
+
+T["annotate()"]["survives a formatter reindenting the file"] = function()
+    setup()
+    H.write(dir .. "/src/fmt.py", { "def f():", "  with lock:", "    x = 1", "  return x" })
+    child.cmd("edit " .. dir .. "/src/fmt.py")
+    child.api.nvim_win_set_cursor(0, { 2, 0 })
+    child.lua("v().annotate()")
+    child.lua([[
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "def f():", "    with lock:", "        x = 1", "    return x" })
+        v().refresh()
+    ]])
+    local it = child.lua_get("require('volley.annotations').list()[1]")
+    eq({ it.lnum, it.status, it.changed }, { 2, "open", false })
+end
+
+T["annotate()"]["follows a rewrite that arrives from disk, the way an agent's does"] = function()
+    setup()
+    H.write(dir .. "/src/twice.py", { "def a():", "    return 1", "", "def b():", "    return 1" })
+    child.cmd("edit " .. dir .. "/src/twice.py")
+    child.api.nvim_win_set_cursor(0, { 5, 0 })
+    child.lua("v().annotate()")
+    -- the agent writes the file, with two lines on top and the second block edited
+    H.write(dir .. "/src/twice.py", {
+        "import os",
+        "",
+        "def a():",
+        "    return 1",
+        "",
+        "def b():",
+        "    return 2",
+    })
+    child.lua("vim.o.autoread = true")
+    child.cmd("checktime")
+    H.wait(child, "vim.api.nvim_buf_line_count(0) == 7", 3000, "the buffer to reload")
+    local it = child.lua_get("require('volley.annotations').list()[1]")
+    eq({ it.lnum, it.status, it.changed }, { 7, "open", true })
+end
+
 T["annotate()"]["writes nothing when you cancel the prompt"] = function()
     setup()
     edit_file()

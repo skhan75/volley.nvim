@@ -1,27 +1,36 @@
 -- The queue of comments you wrote on the agent's changes.
 --
--- A comment remembers the code it points at, not just a line number. The
--- agent keeps editing, so lines move; the remembered text is what lets a
--- comment follow its code, and what tells us when that code is gone.
+-- A comment remembers the file it was written on, not just a line number.
+-- When the agent edits again, the two versions are diffed and the comment's
+-- lines are carried through the hunks, so it lands where its code went even
+-- when another block looks identical. Without a baseline, or when the diff
+-- says the code is gone, the remembered text is searched for instead, which
+-- is what finds a block the agent moved somewhere else.
+
+local anchor = require("volley.anchor")
 
 local M = {}
 
 local items, next_id = {}, 1
 
----@param a { path: string, abs: string, lnum: integer, end_lnum: integer, comment: string, code: string[] }
+---@param a { path: string, abs: string, lnum: integer, end_lnum: integer, comment: string, code: string[], baseline: string[]|nil }
 ---@return integer id
 function M.add(a)
     local id = next_id
     next_id = next_id + 1
+    local end_lnum = a.end_lnum or a.lnum
     items[id] = {
         id = id,
         path = a.path,
         abs = a.abs,
         lnum = a.lnum,
-        end_lnum = a.end_lnum or a.lnum,
+        end_lnum = end_lnum,
         comment = a.comment,
         code = a.code or {},
         status = "open",
+        changed = false,
+        -- the file as it was, and where the comment sat in it
+        anchor = a.baseline and { lines = a.baseline, lnum = a.lnum, end_lnum = end_lnum } or nil,
     }
     return id
 end
@@ -51,9 +60,12 @@ function M.clear()
 end
 
 function M.counts()
-    local c = { open = 0, sent = 0, stale = 0 }
+    local c = { open = 0, sent = 0, stale = 0, changed = 0 }
     for _, it in pairs(items) do
         c[it.status] = (c[it.status] or 0) + 1
+        if it.status == "open" and it.changed then
+            c.changed = c.changed + 1
+        end
     end
     return c
 end
@@ -66,8 +78,19 @@ function M.mark_sent(ids)
     end
 end
 
+-- Two lines are the same code if they differ only in how much whitespace
+-- sits between the words, which is the change a formatter makes.
+local function norm(line)
+    return (line:gsub("%s+", " "):gsub(" $", ""))
+end
+
+local function same_line(a, b)
+    return a == b or norm(a) == norm(b)
+end
+
 -- Find the remembered code in `lines`: the whole block first, then just its
--- first line, which survives the agent rewriting something inside the block.
+-- first line. Says which of the two matched, since a first line match means
+-- the rest of the block is not what was commented on.
 local function find(code, lines)
     if #code == 0 then
         return nil
@@ -75,21 +98,66 @@ local function find(code, lines)
     for start = 1, math.max(#lines - #code + 1, 0) do
         local all = true
         for i, want in ipairs(code) do
-            if lines[start + i - 1] ~= want then
+            if not same_line(lines[start + i - 1] or "", want) then
                 all = false
                 break
             end
         end
         if all then
-            return start, start + #code - 1
+            return start, start + #code - 1, "block"
         end
     end
     for i, line in ipairs(lines) do
-        if line == code[1] then
-            return i, i + #code - 1
+        if same_line(line, code[1]) then
+            return i, i + #code - 1, "line"
         end
     end
     return nil
+end
+
+local function same_text(lines, first, last, code)
+    if last - first + 1 ~= #code then
+        return false
+    end
+    for i, want in ipairs(code) do
+        if not same_line(lines[first + i - 1] or "", want) then
+            return false
+        end
+    end
+    return true
+end
+
+local function settle(it, first, last, changed, n)
+    it.lnum, it.end_lnum = math.max(1, math.min(first, n)), math.max(1, math.min(last, n))
+    it.status, it.changed = "open", changed
+    return true
+end
+
+-- Carry one comment through to `lines`. Diff first, because it cannot pick
+-- the wrong lookalike; text search second, because it is what finds a block
+-- the agent moved; stale last.
+local function place(it, lines)
+    if it.anchor then
+        local first, last, how =
+            anchor.map(it.anchor.lines, lines, it.anchor.lnum, it.anchor.end_lnum)
+        if how == "changed" then
+            return settle(it, first, last, true, #lines)
+        end
+        -- "same" is only believed when the text really is the same; a baseline
+        -- that has drifted from the file falls through to the search.
+        if how == "same" and (it.changed or same_text(lines, first, last, it.code)) then
+            return settle(it, first, last, it.changed, #lines)
+        end
+    end
+    local first, last, by = find(it.code, lines)
+    if not first then
+        return false
+    end
+    settle(it, first, last, by == "line", #lines)
+    -- The search found it where the diff could not, so the diff starts
+    -- again from here.
+    it.anchor = { lines = lines, lnum = it.lnum, end_lnum = it.end_lnum }
+    return true
 end
 
 ---Re-point every comment on `abs` at where its code is now.
@@ -99,13 +167,12 @@ function M.reanchor(abs, lines)
     local drop = require("volley.config").options.stale == "drop"
     for id, it in pairs(items) do
         if it.abs == abs and it.status ~= "sent" then
-            local first, last = find(it.code, lines)
-            if first then
-                it.lnum, it.end_lnum, it.status = first, math.min(last, #lines), "open"
-            elseif drop then
-                items[id] = nil
-            else
-                it.status = "stale"
+            if not place(it, lines) then
+                if drop then
+                    items[id] = nil
+                else
+                    it.status = "stale"
+                end
             end
         end
     end
@@ -135,9 +202,13 @@ function M.payload()
         "",
     }
     for n, it in ipairs(open) do
-        local stale = it.status == "stale" and "  (the code this pointed at has moved or gone)"
-            or ""
-        out[#out + 1] = ("%d. %s%s"):format(n, where(it), stale)
+        local note = ""
+        if it.status == "stale" then
+            note = "  (the code this pointed at has moved or gone)"
+        elseif it.changed then
+            note = "  (the code under this comment has changed since it was written)"
+        end
+        out[#out + 1] = ("%d. %s%s"):format(n, where(it), note)
         for _, line in ipairs(it.code) do
             out[#out + 1] = "       " .. line
         end

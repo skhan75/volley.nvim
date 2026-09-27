@@ -186,7 +186,9 @@ function M.annotate()
         return notify("nothing to comment on here", vim.log.levels.WARN)
     end
     local l1, l2 = selection()
-    local code = vim.api.nvim_buf_get_lines(buf, l1 - 1, l2, false)
+    -- the whole file too, so the comment can be diffed forward later
+    local baseline = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local code = vim.list_slice(baseline, l1, l2)
     local cs = cache.changeset
     local root = cs and cs.root or vim.uv.cwd()
     local rel = abs:sub(1, #root + 1) == root .. "/" and abs:sub(#root + 2) or abs
@@ -204,6 +206,7 @@ function M.annotate()
                 end_lnum = l2,
                 comment = text,
                 code = code,
+                baseline = baseline,
             })
             render.draw(buf)
             local c = annotations.counts()

@@ -69,7 +69,7 @@ T["add and list"]["counts what is open"] = function()
     add(a)
     local id = add(a, { lnum = 40, end_lnum = 40 })
     a.mark_sent({ id })
-    eq(a.counts(), { open = 1, sent = 1, stale = 0 })
+    eq(a.counts(), { open = 1, sent = 1, stale = 0, changed = 0 })
 end
 
 T["reanchor"] = MiniTest.new_set()
@@ -119,6 +119,186 @@ T["reanchor"]["drops it instead when you asked for that"] = function()
     eq(#a.list(), 1)
 end
 
+-- With a baseline, a comment is placed by diffing the file it was written on
+-- against the file as it is now, so it cannot be fooled by lookalike code.
+local TWICE = {
+    "def one():",
+    "    with lock:",
+    "        x = 1",
+    "",
+    "def two():",
+    "    with lock:",
+    "        x = 1",
+}
+
+local function on_second_block(a)
+    return a.add({
+        path = "a.py",
+        abs = "/p/a.py",
+        lnum = 6,
+        end_lnum = 7,
+        comment = "the second one",
+        code = { "    with lock:", "        x = 1" },
+        baseline = TWICE,
+    })
+end
+
+T["reanchor"]["tells two identical blocks apart when it has a baseline"] = function()
+    local a = ann()
+    local id = on_second_block(a)
+    -- two lines land at the top; a text search would grab the first block
+    local cur = { "import os", "" }
+    vim.list_extend(cur, TWICE)
+    a.reanchor("/p/a.py", cur)
+    eq({ a.get(id).lnum, a.get(id).end_lnum, a.get(id).status }, { 8, 9, "open" })
+    eq(a.get(id).changed, false)
+end
+
+T["reanchor"]["says when the code under a comment was rewritten"] = function()
+    local a = ann()
+    local id = on_second_block(a)
+    local cur = vim.deepcopy(TWICE)
+    cur[7] = "        x = 2"
+    a.reanchor("/p/a.py", cur)
+    eq({ a.get(id).lnum, a.get(id).end_lnum, a.get(id).status }, { 6, 7, "open" })
+    eq(a.get(id).changed, true)
+end
+
+T["reanchor"]["finds code the agent moved somewhere else"] = function()
+    local a = ann()
+    local id = on_second_block(a)
+    -- the second block is cut from where it was and pasted at the very end
+    local cur = { TWICE[1], TWICE[2], TWICE[3], "", "def two():", "    pass", "", "def three():" }
+    vim.list_extend(cur, { "    with lock:", "        x = 1" })
+    a.reanchor("/p/a.py", cur)
+    eq({ a.get(id).lnum, a.get(id).end_lnum, a.get(id).status }, { 9, 10, "open" })
+    eq(a.get(id).changed, false)
+end
+
+T["reanchor"]["does not guess after a wholesale rewrite"] = function()
+    local a = ann()
+    local base = {}
+    for i = 1, 40 do
+        base[i] = "line " .. i
+    end
+    local id = a.add({
+        path = "a.py",
+        abs = "/p/a.py",
+        lnum = 3,
+        end_lnum = 4,
+        comment = "c",
+        code = { base[3], base[4] },
+        baseline = base,
+    })
+    local cur = {}
+    for i = 1, 40 do
+        cur[i] = "something else " .. i
+    end
+    a.reanchor("/p/a.py", cur)
+    eq(a.get(id).status, "stale")
+end
+
+T["reanchor"]["a rewritten block still follows later moves"] = function()
+    local a = ann()
+    local id = on_second_block(a)
+    local cur = vim.deepcopy(TWICE)
+    cur[7] = "        x = 2"
+    a.reanchor("/p/a.py", cur)
+    eq(a.get(id).changed, true)
+    -- and then two lines land at the top
+    local later = { "import os", "" }
+    vim.list_extend(later, cur)
+    a.reanchor("/p/a.py", later)
+    eq({ a.get(id).lnum, a.get(id).end_lnum, a.get(id).changed }, { 8, 9, true })
+end
+
+T["reanchor"]["a wholesale rewrite that keeps the block verbatim still finds it"] = function()
+    local a = ann()
+    local base = {}
+    for i = 1, 40 do
+        base[i] = "line " .. i
+    end
+    base[21], base[22] = "    with lock:", "        x = 1"
+    local id = a.add({
+        path = "a.py",
+        abs = "/p/a.py",
+        lnum = 21,
+        end_lnum = 22,
+        comment = "c",
+        code = { base[21], base[22] },
+        baseline = base,
+    })
+    local cur = {}
+    for i = 1, 40 do
+        cur[i] = "other " .. i
+    end
+    cur[5], cur[6] = "    with lock:", "        x = 1"
+    a.reanchor("/p/a.py", cur)
+    eq(
+        { a.get(id).lnum, a.get(id).end_lnum, a.get(id).status, a.get(id).changed },
+        { 5, 6, "open", false }
+    )
+end
+
+T["reanchor"]["reanchoring twice with nothing changed moves nothing"] = function()
+    local a = ann()
+    local id = on_second_block(a)
+    a.reanchor("/p/a.py", TWICE)
+    a.reanchor("/p/a.py", TWICE)
+    eq({ a.get(id).lnum, a.get(id).end_lnum, a.get(id).changed }, { 6, 7, false })
+end
+
+T["reanchor"]["two comments written at different times each keep their own baseline"] = function()
+    local a = ann()
+    local first = on_second_block(a) -- written against TWICE, on lines 6-7
+    local mid = { "import os", "" }
+    vim.list_extend(mid, TWICE)
+    a.reanchor("/p/a.py", mid)
+    -- a second comment, written against the file as it is now, on the first block
+    local second = a.add({
+        path = "a.py",
+        abs = "/p/a.py",
+        lnum = 4,
+        end_lnum = 5,
+        comment = "the first one",
+        code = { "    with lock:", "        x = 1" },
+        baseline = mid,
+    })
+    -- and one more line lands at the top
+    local later = { "import sys" }
+    vim.list_extend(later, mid)
+    a.reanchor("/p/a.py", later)
+    eq({ a.get(first).lnum, a.get(first).end_lnum }, { 9, 10 })
+    eq({ a.get(second).lnum, a.get(second).end_lnum }, { 5, 6 })
+end
+
+T["reanchor"]["a formatter reindenting the file leaves comments alone"] = function()
+    local a = ann()
+    local base = { "def f():", "  with lock:", "    x = 1", "  return x" }
+    local id = a.add({
+        path = "a.py",
+        abs = "/p/a.py",
+        lnum = 2,
+        end_lnum = 3,
+        comment = "c",
+        code = { "  with lock:", "    x = 1" },
+        baseline = base,
+    })
+    a.reanchor("/p/a.py", { "def f():", "    with lock:", "        x = 1", "    return x" })
+    eq(
+        { a.get(id).lnum, a.get(id).end_lnum, a.get(id).status, a.get(id).changed },
+        { 2, 3, "open", false }
+    )
+end
+
+T["reanchor"]["drops a comment with a baseline too when asked"] = function()
+    require("volley.config").setup({ stale = "drop" })
+    local a = ann()
+    local id = on_second_block(a)
+    a.reanchor("/p/a.py", { "nothing", "here" })
+    eq(a.get(id), nil)
+end
+
 T["reanchor"]["leaves other files alone"] = function()
     local a = ann()
     local id = add(a)
@@ -166,6 +346,15 @@ T["payload"]["says when a comment's code has moved on"] = function()
     add(a)
     a.reanchor("/proj/src/billing.py", { "gone" })
     eq(a.payload():lower():find("moved or gone", 1, true) ~= nil, true)
+end
+
+T["payload"]["says when the code under a comment has changed"] = function()
+    local a = ann()
+    on_second_block(a)
+    local cur = vim.deepcopy(TWICE)
+    cur[7] = "        x = 2"
+    a.reanchor("/p/a.py", cur)
+    eq(a.payload():lower():find("changed since", 1, true) ~= nil, true)
 end
 
 T["payload"]["only sends what is still open"] = function()

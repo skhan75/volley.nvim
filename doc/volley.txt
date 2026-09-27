@@ -14,6 +14,7 @@ CONTENTS                                                     *volley-contents*
   9. Highlights ............................. |volley-highlights|
  10. Lua API ............................... |volley-api|
  11. Health ................................ |volley-health|
+ 12. Questions ............................. |volley-questions|
 
 ==============================================================================
 1. INTRODUCTION                                          *volley-introduction*
@@ -47,9 +48,12 @@ otherwise volley draws its own list.
    into its own window when volley can see it, otherwise as a command whose
    answer opens in a split.
 
-A comment follows its code when the agent edits the file again. When the code
-is gone the comment is marked stale, and it is still sent with a note saying
-so.
+A comment remembers the file as it was when you wrote it. When the agent
+edits the file again the two versions are diffed and the comment is carried
+through the hunks, so it stays on its lines even when another block looks the
+same. Lines rewritten underneath it leave it in place and mark it
+`(code changed since)`. Code moved elsewhere is found by its text. Code that
+is gone marks the comment stale, and it is still sent with a note saying so.
 
 ==============================================================================
 4. COMMANDS                                                  *volley-commands*
@@ -237,7 +241,8 @@ volley.clear()                                               *volley.clear()*
     Throw the comments away.
 
 volley.status()                                             *volley.status()*
-    Returns `{ open = n, sent = n, stale = n }`, handy in a statusline.
+    Returns `{ open = n, sent = n, stale = n, changed = n }`, handy in a
+    statusline. `changed` counts open comments whose lines were rewritten.
 
 volley.changeset()                                       *volley.changeset()*
     Returns what changed, as
@@ -248,5 +253,35 @@ volley.changeset()                                       *volley.changeset()*
 
 `:checkhealth volley` reports your Neovim version, whether setup() ran, the
 picker and source it will use, and whether the agent command is on your PATH.
+
+==============================================================================
+12. QUESTIONS                                               *volley-questions*
+
+How do comments stay on the right lines? ~
+    Each comment keeps a copy of the file from when it was written. On every
+    redraw that copy is diffed against the file now and the comment is moved
+    through the hunks. It is arithmetic, not a search, so a lookalike block
+    elsewhere cannot steal it. When the diff says the lines are gone, the
+    text is searched for instead, which finds code the agent moved. Nothing
+    matches, the comment goes stale.
+
+What about formatters? ~
+    Whitespace-only changes are ignored, so a reindent or a cleanup pass
+    does not move or flag a comment.
+
+Does it use an LLM or fuzzy matching? ~
+    No. A diff, then an exact text match. No network, well under a
+    millisecond.
+
+Why does it say the agent is busy? ~
+    Its terminal was still printing. Wait, or set `agent.require_idle`
+    to false.
+
+Can the agent apply changes from my comments? ~
+    Into its own terminal, yes, with its usual approval prompts. The command
+    route cannot ask, so it describes the change instead.
+
+Does it need git? ~
+    No. Without a repo, run `:Volley snapshot` before the agent starts.
 
 vim:tw=78:ts=8:ft=help:norl:
